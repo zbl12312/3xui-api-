@@ -12,6 +12,8 @@ BUILD_DIR="${XUI_CUSTOM_BUILD_DIR:-/tmp/3xui-api-build}"
 INSTALL_DIR="${XUI_CUSTOM_INSTALL_DIR:-/usr/local/x-ui}"
 SERVICE_DIR="${XUI_CUSTOM_SERVICE_DIR:-/etc/systemd/system}"
 XRAY_VERSION="${XUI_CUSTOM_XRAY_VERSION:-v26.6.27}"
+GO_VERSION="${XUI_CUSTOM_GO_VERSION:-1.26.5}"
+NODE_MAJOR="${XUI_CUSTOM_NODE_MAJOR:-24}"
 
 log() {
     echo -e "${green}$*${plain}"
@@ -78,29 +80,72 @@ xray_binary_name() {
     esac
 }
 
+go_asset_arch() {
+    case "$(arch)" in
+        amd64) echo "amd64" ;;
+        arm64) echo "arm64" ;;
+        386) echo "386" ;;
+        armv7 | armv6 | armv5) echo "armv6l" ;;
+        s390x) echo "s390x" ;;
+    esac
+}
+
 install_packages() {
     log "Installing build dependencies..."
     case "${ID}" in
         ubuntu | debian | armbian)
             apt-get update
-            apt-get install -y -q git curl unzip tar ca-certificates build-essential golang-go nodejs npm
+            apt-get install -y -q git curl unzip tar ca-certificates build-essential
             ;;
         centos)
             if [[ "${VERSION_ID:-}" =~ ^7 ]] || ! command -v dnf > /dev/null 2>&1; then
                 yum makecache -y
-                yum install -y git curl unzip tar ca-certificates gcc gcc-c++ make golang nodejs npm
+                yum install -y git curl unzip tar ca-certificates gcc gcc-c++ make
             else
                 dnf makecache -y
-                dnf install -y -q git curl unzip tar ca-certificates gcc gcc-c++ make golang nodejs npm
+                dnf install -y -q git curl unzip tar ca-certificates gcc gcc-c++ make
             fi
             ;;
         rhel | rocky | almalinux | ol | fedora | amzn | virtuozzo)
             if command -v dnf > /dev/null 2>&1; then
                 dnf makecache -y
-                dnf install -y -q git curl unzip tar ca-certificates gcc gcc-c++ make golang nodejs npm
+                dnf install -y -q git curl unzip tar ca-certificates gcc gcc-c++ make
             else
                 yum makecache -y
-                yum install -y git curl unzip tar ca-certificates gcc gcc-c++ make golang nodejs npm
+                yum install -y git curl unzip tar ca-certificates gcc gcc-c++ make
+            fi
+            ;;
+    esac
+}
+
+install_go() {
+    local asset_arch file url
+    asset_arch="$(go_asset_arch)"
+    file="go${GO_VERSION}.linux-${asset_arch}.tar.gz"
+    url="https://go.dev/dl/${file}"
+
+    log "Installing Go ${GO_VERSION}..."
+    curl -fL -o "/tmp/${file}" "${url}"
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf "/tmp/${file}"
+    rm -f "/tmp/${file}"
+    ln -sf /usr/local/go/bin/go /usr/local/bin/go
+    ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+}
+
+install_node() {
+    log "Installing Node.js ${NODE_MAJOR}.x..."
+    case "${ID}" in
+        ubuntu | debian | armbian)
+            curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+            apt-get install -y -q nodejs
+            ;;
+        *)
+            curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+            if command -v dnf > /dev/null 2>&1; then
+                dnf install -y -q nodejs
+            else
+                yum install -y nodejs
             fi
             ;;
     esac
@@ -199,6 +244,8 @@ main() {
     detect_os
     log "Detected architecture: $(arch)"
     install_packages
+    install_go
+    install_node
     fetch_source
     build_frontend
     build_backend
