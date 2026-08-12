@@ -15,6 +15,7 @@ PANEL_USERNAME=""
 PANEL_PASSWORD=""
 PANEL_PORT=""
 PANEL_WEB_BASE_PATH=""
+PANEL_HOST=""
 
 gen_random_string() {
     local length="$1"
@@ -53,6 +54,29 @@ arch() {
         x86_64 | x64 | amd64) echo "amd64" ;;
         *) fail "This fast installer currently supports amd64 only. Detected: $(uname -m)" ;;
     esac
+}
+
+get_public_host() {
+    local public_ip
+    public_ip=$(curl -fsS --max-time 6 https://api.ipify.org 2> /dev/null || true)
+    if [[ -n "${public_ip}" ]]; then
+        echo "${public_ip}"
+        return
+    fi
+
+    hostname -I 2> /dev/null | awk '{print $1}'
+}
+
+normalize_url_path() {
+    local path="$1"
+    path="${path#/}"
+    path="${path%/}"
+
+    if [[ -z "${path}" ]]; then
+        echo "/"
+    else
+        echo "/${path}/"
+    fi
 }
 
 install_base() {
@@ -155,10 +179,31 @@ configure_panel() {
     fi
 }
 
+load_panel_settings() {
+    local info
+
+    info=$("${INSTALL_DIR}/x-ui" setting -show true 2> /dev/null || true)
+    PANEL_PORT="${PANEL_PORT:-$(echo "${info}" | grep -Eo 'port: .+' | awk '{print $2}' || true)}"
+    PANEL_WEB_BASE_PATH="${PANEL_WEB_BASE_PATH:-$(echo "${info}" | grep -Eo 'webBasePath: .+' | awk '{print $2}' | sed 's#^/##' || true)}"
+    PANEL_HOST="${XUI_PANEL_HOST:-$(get_public_host)}"
+}
+
 print_result() {
+    local panel_path panel_url
+
+    load_panel_settings
+    panel_path="$(normalize_url_path "${PANEL_WEB_BASE_PATH}")"
+    panel_url="http://${PANEL_HOST}:${PANEL_PORT}${panel_path}"
+
     echo
     log "Fast x-ui installation finished."
     echo -e "Package: ${PACKAGE_URL}"
+    if [[ -n "${PANEL_HOST}" && -n "${PANEL_PORT}" ]]; then
+        echo
+        echo -e "${green}Panel URL:    ${panel_url}${plain}"
+        echo -e "${green}API Docs:     ${panel_url}api-docs${plain}"
+        echo -e "${green}OpenAPI JSON: ${panel_url}panel/api/openapi.json${plain}"
+    fi
     if [[ -n "${PANEL_USERNAME}" ]]; then
         echo
         echo -e "${green}Initial panel settings:${plain}"
@@ -173,6 +218,7 @@ print_result() {
     echo -e "  x-ui"
     echo -e "  systemctl status x-ui"
     echo
+    warn "Create API tokens after login: Settings -> API Tokens."
     warn "Run 'x-ui' to open the management menu."
 }
 
