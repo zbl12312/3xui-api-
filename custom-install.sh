@@ -133,11 +133,21 @@ install_go() {
     ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
 }
 
+cleanup_debian_node_packages() {
+    log "Removing old distro Node.js packages..."
+    apt-get remove -y -q nodejs npm libnode-dev nodejs-doc || true
+    apt-get autoremove -y -q || true
+    dpkg --configure -a
+    apt-get --fix-broken install -y -q
+}
+
 install_node() {
     log "Installing Node.js ${NODE_MAJOR}.x..."
     case "${ID}" in
         ubuntu | debian | armbian)
+            cleanup_debian_node_packages
             curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+            apt-get update
             apt-get install -y -q nodejs
             ;;
         *)
