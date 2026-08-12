@@ -11,6 +11,19 @@ PACKAGE_NAME="${XUI_CUSTOM_PACKAGE_NAME:-x-ui-linux-amd64.tar.gz}"
 PACKAGE_URL="${XUI_CUSTOM_PACKAGE_URL:-https://github.com/zbl12312/3xui-api-/releases/download/${RELEASE_TAG}/${PACKAGE_NAME}}"
 INSTALL_DIR="${XUI_CUSTOM_INSTALL_DIR:-/usr/local/x-ui}"
 SERVICE_DIR="${XUI_CUSTOM_SERVICE_DIR:-/etc/systemd/system}"
+PANEL_USERNAME=""
+PANEL_PASSWORD=""
+PANEL_PORT=""
+PANEL_WEB_BASE_PATH=""
+
+gen_random_string() {
+    local length="$1"
+    if command -v openssl > /dev/null 2>&1; then
+        openssl rand -base64 $((length * 2)) | tr -dc 'a-zA-Z0-9' | head -c "$length"
+    else
+        tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c "$length"
+    fi
+}
 
 log() {
     echo -e "${green}$*${plain}"
@@ -47,24 +60,24 @@ install_base() {
     case "${ID}" in
         ubuntu | debian | armbian)
             apt-get update
-            apt-get install -y -q curl tar ca-certificates
+            apt-get install -y -q curl tar ca-certificates openssl
             ;;
         centos)
             if [[ "${VERSION_ID:-}" =~ ^7 ]] || ! command -v dnf > /dev/null 2>&1; then
                 yum makecache -y
-                yum install -y curl tar ca-certificates
+                yum install -y curl tar ca-certificates openssl
             else
                 dnf makecache -y
-                dnf install -y -q curl tar ca-certificates
+                dnf install -y -q curl tar ca-certificates openssl
             fi
             ;;
         rhel | rocky | almalinux | ol | fedora | amzn | virtuozzo)
             if command -v dnf > /dev/null 2>&1; then
                 dnf makecache -y
-                dnf install -y -q curl tar ca-certificates
+                dnf install -y -q curl tar ca-certificates openssl
             else
                 yum makecache -y
-                yum install -y curl tar ca-certificates
+                yum install -y curl tar ca-certificates openssl
             fi
             ;;
         *)
@@ -120,16 +133,47 @@ start_service() {
     systemctl restart x-ui
 }
 
+configure_panel() {
+    local info has_default web_base_path
+
+    info=$("${INSTALL_DIR}/x-ui" setting -show true 2> /dev/null || true)
+    has_default=$(echo "${info}" | grep -Eo 'hasDefaultCredential: .+' | awk '{print $2}' || true)
+    web_base_path=$(echo "${info}" | grep -Eo 'webBasePath: .+' | awk '{print $2}' | sed 's#^/##' || true)
+
+    if [[ "${has_default}" == "true" || ${#web_base_path} -lt 4 ]]; then
+        PANEL_USERNAME="${XUI_USERNAME:-$(gen_random_string 10)}"
+        PANEL_PASSWORD="${XUI_PASSWORD:-$(gen_random_string 10)}"
+        PANEL_PORT="${XUI_PANEL_PORT:-$(shuf -i 1024-62000 -n 1)}"
+        PANEL_WEB_BASE_PATH="${XUI_WEB_BASE_PATH:-$(gen_random_string 18)}"
+
+        log "Configuring initial panel credentials..."
+        "${INSTALL_DIR}/x-ui" setting \
+            -username "${PANEL_USERNAME}" \
+            -password "${PANEL_PASSWORD}" \
+            -port "${PANEL_PORT}" \
+            -webBasePath "${PANEL_WEB_BASE_PATH}"
+    fi
+}
+
 print_result() {
     echo
     log "Fast x-ui installation finished."
     echo -e "Package: ${PACKAGE_URL}"
+    if [[ -n "${PANEL_USERNAME}" ]]; then
+        echo
+        echo -e "${green}Initial panel settings:${plain}"
+        echo -e "${green}Username:    ${PANEL_USERNAME}${plain}"
+        echo -e "${green}Password:    ${PANEL_PASSWORD}${plain}"
+        echo -e "${green}Port:        ${PANEL_PORT}${plain}"
+        echo -e "${green}WebBasePath: ${PANEL_WEB_BASE_PATH}${plain}"
+        echo -e "${yellow}Save these credentials securely.${plain}"
+    fi
     echo
     echo -e "Useful commands:"
     echo -e "  x-ui"
     echo -e "  systemctl status x-ui"
     echo
-    warn "If this is a fresh install, run 'x-ui' to configure panel settings and login credentials."
+    warn "Run 'x-ui' to open the management menu."
 }
 
 main() {
@@ -138,6 +182,7 @@ main() {
     arch > /dev/null
     install_base
     install_package
+    configure_panel
     start_service
     print_result
 }
