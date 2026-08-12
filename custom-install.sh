@@ -14,6 +14,7 @@ SERVICE_DIR="${XUI_CUSTOM_SERVICE_DIR:-/etc/systemd/system}"
 XRAY_VERSION="${XUI_CUSTOM_XRAY_VERSION:-v26.6.27}"
 GO_VERSION="${XUI_CUSTOM_GO_VERSION:-1.26.5}"
 NODE_MAJOR="${XUI_CUSTOM_NODE_MAJOR:-24}"
+NPM_REGISTRY="${XUI_CUSTOM_NPM_REGISTRY:-https://registry.npmmirror.com}"
 
 log() {
     echo -e "${green}$*${plain}"
@@ -178,9 +179,21 @@ fetch_source() {
     git clone --depth 1 --branch "${REPO_REF}" "${REPO_URL}" "${BUILD_DIR}"
 }
 
+configure_npm() {
+    log "Configuring npm registry and retry settings..."
+    npm config set registry "${NPM_REGISTRY}"
+    npm config set fetch-retries 5
+    npm config set fetch-retry-factor 2
+    npm config set fetch-retry-mintimeout 20000
+    npm config set fetch-retry-maxtimeout 120000
+    npm config set timeout 300000
+    npm cache clean --force || true
+}
+
 build_frontend() {
     log "Building frontend..."
     cd "${BUILD_DIR}/frontend"
+    configure_npm
     npm install
     npm run build
 }
@@ -241,6 +254,7 @@ print_result() {
     log "Custom 3x-ui installation finished."
     echo -e "Repository: ${REPO_URL}"
     echo -e "Xray-core: ${XRAY_VERSION}"
+    echo -e "npm registry: ${NPM_REGISTRY}"
     echo
     echo -e "Useful commands:"
     echo -e "  x-ui"
