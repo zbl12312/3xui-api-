@@ -35,10 +35,10 @@ detect_os() {
     # shellcheck disable=SC1091
     source /etc/os-release
     case "${ID}" in
-        ubuntu | debian)
+        ubuntu | debian | armbian | centos | rhel | rocky | almalinux | ol | fedora | amzn | virtuozzo)
             ;;
         *)
-            fail "This custom installer currently supports Ubuntu/Debian only. Detected: ${ID}"
+            fail "This custom installer currently supports Debian/Ubuntu and CentOS/RHEL-family systems. Detected: ${ID}"
             ;;
     esac
 }
@@ -80,8 +80,41 @@ xray_binary_name() {
 
 install_packages() {
     log "Installing build dependencies..."
-    apt-get update
-    apt-get install -y -q git curl unzip tar ca-certificates build-essential golang-go nodejs npm
+    case "${ID}" in
+        ubuntu | debian | armbian)
+            apt-get update
+            apt-get install -y -q git curl unzip tar ca-certificates build-essential golang-go nodejs npm
+            ;;
+        centos)
+            if [[ "${VERSION_ID:-}" =~ ^7 ]] || ! command -v dnf > /dev/null 2>&1; then
+                yum makecache -y
+                yum install -y git curl unzip tar ca-certificates gcc gcc-c++ make golang nodejs npm
+            else
+                dnf makecache -y
+                dnf install -y -q git curl unzip tar ca-certificates gcc gcc-c++ make golang nodejs npm
+            fi
+            ;;
+        rhel | rocky | almalinux | ol | fedora | amzn | virtuozzo)
+            if command -v dnf > /dev/null 2>&1; then
+                dnf makecache -y
+                dnf install -y -q git curl unzip tar ca-certificates gcc gcc-c++ make golang nodejs npm
+            else
+                yum makecache -y
+                yum install -y git curl unzip tar ca-certificates gcc gcc-c++ make golang nodejs npm
+            fi
+            ;;
+    esac
+}
+
+service_file() {
+    case "${ID}" in
+        ubuntu | debian | armbian)
+            echo "x-ui.service.debian"
+            ;;
+        *)
+            echo "x-ui.service.rhel"
+            ;;
+    esac
 }
 
 fetch_source() {
@@ -135,7 +168,7 @@ install_panel() {
     cp -f "${BUILD_DIR}/x-ui.sh" /usr/bin/x-ui
     chmod +x /usr/bin/x-ui
 
-    cp -f "${BUILD_DIR}/x-ui.service.debian" "${SERVICE_DIR}/x-ui.service"
+    cp -f "${BUILD_DIR}/$(service_file)" "${SERVICE_DIR}/x-ui.service"
     chown root:root "${SERVICE_DIR}/x-ui.service"
     chmod 644 "${SERVICE_DIR}/x-ui.service"
 }
