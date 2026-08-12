@@ -16,6 +16,7 @@ PANEL_PASSWORD=""
 PANEL_PORT=""
 PANEL_WEB_BASE_PATH=""
 PANEL_HOST=""
+PANEL_API_TOKEN=""
 
 gen_random_string() {
     local length="$1"
@@ -188,10 +189,18 @@ load_panel_settings() {
     PANEL_HOST="${XUI_PANEL_HOST:-$(get_public_host)}"
 }
 
+create_api_token() {
+    local token_info
+
+    token_info=$("${INSTALL_DIR}/x-ui" setting -getApiToken true 2> /dev/null || true)
+    PANEL_API_TOKEN="$(echo "${token_info}" | grep -Eo 'apiToken: .+' | awk '{print $2}' | tail -n 1 || true)"
+}
+
 print_result() {
     local panel_path panel_url
 
     load_panel_settings
+    create_api_token
     panel_path="$(normalize_url_path "${PANEL_WEB_BASE_PATH}")"
     panel_url="http://${PANEL_HOST}:${PANEL_PORT}${panel_path}"
 
@@ -203,6 +212,7 @@ print_result() {
         echo -e "${green}Panel URL:    ${panel_url}${plain}"
         echo -e "${green}API Docs:     ${panel_url}api-docs${plain}"
         echo -e "${green}OpenAPI JSON: ${panel_url}panel/api/openapi.json${plain}"
+        [[ -n "${PANEL_API_TOKEN}" ]] && echo -e "${green}API Token:    ${PANEL_API_TOKEN}${plain}"
     fi
     if [[ -n "${PANEL_USERNAME}" ]]; then
         echo
@@ -218,7 +228,7 @@ print_result() {
     echo -e "  x-ui"
     echo -e "  systemctl status x-ui"
     echo
-    warn "Create API tokens after login: Settings -> API Tokens."
+    warn "Save the API token now. It cannot be shown again later."
     warn "Run 'x-ui' to open the management menu."
 }
 
